@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GitHub API Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        
+        .hidden-tab { display: none; }
+        
+        /* Line Highlighting & Code View */
+        .line-row { display: flex; width: max-content; min-width: 100%; }
+        .line-num { 
+            width: 3rem; 
+            flex-shrink: 0;
+            text-align: right; 
+            padding-right: 0.75rem; 
+            color: #6b7280; 
+            user-select: none; 
+            border-right: 1px solid #374151;
+            margin-right: 0.75rem;
+            background: #1f2937; /* Sticky look background */
+        }
+        .line-content { white-space: pre; font-family: monospace; }
+        .highlight-line { background-color: rgba(59, 130, 246, 0.2); }
+        .highlight-line .line-num { border-right-color: #3b82f6; color: #60a5fa; }
+
+        /* Mobile Overlay Transition */
+        .sidebar-transition { transition: transform 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans h-screen flex overflow-hidden selection:bg-blue-500 selection:text-white">
+
+    <!-- Mobile Overlay Backdrop -->
+    <div id="mobile-overlay" class="fixed inset-0 bg-black/70 z-40 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
+
+    <!-- Sidebar (Off-canvas on mobile, fixed on desktop) -->
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-slate-800 border-r border-slate-700 flex flex-col transform -translate-x-full md:translate-x-0 sidebar-transition md:relative shrink-0 shadow-2xl md:shadow-none">
+        <div class="p-4 border-b border-slate-700 flex justify-between items-center h-16">
+            <h1 class="text-xl font-bold text-blue-400 truncate"><i class="fab fa-github mr-2"></i>RepoManager</h1>
+            <!-- Close button for mobile -->
+            <button id="btn-close-sidebar" class="md:hidden text-slate-400 hover:text-white">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+            <button id="btn-tab-manage" class="nav-btn w-full text-left px-4 py-3 rounded bg-slate-700 text-blue-300 transition flex items-center">
+                <i class="fas fa-server w-6 text-center mr-2"></i> Manage Repos
+            </button>
+            <button id="btn-tab-viewer" class="nav-btn w-full text-left px-4 py-3 rounded text-slate-400 hover:bg-slate-700 transition flex items-center">
+                <i class="fas fa-file-code w-6 text-center mr-2"></i> File Viewer
+            </button>
+            <button id="btn-tab-search" class="nav-btn w-full text-left px-4 py-3 rounded text-slate-400 hover:bg-slate-700 transition flex items-center">
+                <i class="fas fa-search w-6 text-center mr-2"></i> Search
+            </button>
+        </nav>
+        
+        <div class="p-4 border-t border-slate-700 text-xs text-slate-500 text-center">
+            Frontend Mobile v1.3
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col min-w-0 bg-slate-900">
+        
+        <!-- Header -->
+        <header class="bg-slate-800 border-b border-slate-700 h-16 flex items-center px-4 justify-between shrink-0 relative z-30">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <!-- Hamburger Menu -->
+                <button id="btn-mobile-menu" class="md:hidden text-slate-300 p-2 hover:bg-slate-700 rounded">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <h2 id="page-title" class="text-base md:text-lg font-semibold truncate">Repository Management</h2>
+            </div>
+            
+            <div class="flex items-center gap-2 md:gap-4 ml-2">
+                <!-- Status Indicator (Icon on mobile) -->
+                <div id="status-indicator" class="hidden text-blue-400 animate-pulse">
+                    <i class="fas fa-circle-notch fa-spin"></i> <span class="hidden md:inline text-xs font-bold ml-1">Processing...</span>
+                </div>
+
+                <!-- API Key (Collapsible/Icon logic could go here, for now compact) -->
+                <div class="flex items-center bg-slate-900 rounded border border-slate-600 px-2 py-1 max-w-[140px] md:max-w-none">
+                    <i class="fas fa-key text-slate-500 text-xs mr-2"></i>
+                    <input type="password" id="api-key-input" placeholder="API Key" class="bg-transparent border-none focus:outline-none text-xs w-full text-slate-300 placeholder-slate-600">
+                    <button id="btn-save-key" class="text-xs text-blue-400 font-bold ml-1 hover:text-blue-300"><i class="fas fa-save"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 overflow-auto p-4 md:p-6 relative scroll-smooth">
+
+            <!-- TAB: Manage Repos -->
+            <section id="tab-manage" class="tab-content space-y-4 md:space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Clone -->
+                    <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm">
+                        <h3 class="font-bold mb-3 text-blue-400 flex items-center"><i class="fas fa-download mr-2"></i>Clone Repository</h3>
+                        <div class="flex flex-col md:flex-row gap-2">
+                            <input type="text" id="clone-url" placeholder="https://github.com/user/repo" class="flex-1 bg-slate-900 border border-slate-600 rounded px-3 py-2.5 focus:outline-none focus:border-blue-500 text-base md:text-sm">
+                            <button id="btn-clone" class="bg-blue-600 hover:bg-blue-500 px-4 py-2.5 rounded text-sm font-semibold transition active:scale-95">Clone</button>
+                        </div>
+                    </div>
+                    <!-- Danger Zone -->
+                    <div class="bg-slate-800 p-4 rounded-lg border border-red-900/50 shadow-sm">
+                        <h3 class="font-bold mb-3 text-red-400 flex items-center"><i class="fas fa-exclamation-triangle mr-2"></i>Danger Zone</h3>
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <span class="text-sm text-slate-400">Delete all local repositories?</span>
+                            <button id="btn-clean" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 px-4 py-2 rounded text-sm font-semibold transition active:scale-95">Clean All</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- List -->
+                <div class="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden shadow-sm flex flex-col h-[50vh] md:h-auto">
+                    <div class="flex justify-between items-center p-3 md:p-4 border-b border-slate-700 bg-slate-800/50 shrink-0">
+                        <h3 class="font-bold text-sm md:text-base">Active Repositories</h3>
+                        <button id="btn-refresh" class="text-sm text-slate-400 hover:text-white p-2"><i class="fas fa-sync-alt"></i></button>
+                    </div>
+                    <div class="overflow-auto flex-1">
+                        <table class="w-full text-sm text-left whitespace-nowrap">
+                            <thead class="text-xs uppercase bg-slate-900 text-slate-400 sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-4 py-3">Repo URL</th>
+                                    <th class="px-4 py-3 hidden sm:table-cell">Path</th>
+                                    <th class="px-4 py-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repo-list-body" class="divide-y divide-slate-700">
+                                <tr><td colspan="3" class="px-4 py-4 text-center text-slate-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: File Viewer -->
+            <section id="tab-viewer" class="tab-content hidden-tab space-y-4 h-full flex flex-col">
+                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 shrink-0 shadow-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div class="md:col-span-1">
+                            <label class="block text-xs text-slate-400 mb-1">Select Repo</label>
+                            <div class="relative">
+                                <select id="viewer-repo-select" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500 text-base md:text-sm appearance-none">
+                                    <option value="">-- Select --</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400"><i class="fas fa-chevron-down text-xs"></i></div>
+                            </div>
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-xs text-slate-400 mb-1">File Path</label>
+                            <div class="flex flex-col md:flex-row gap-2">
+                                <input type="text" id="viewer-file-path" placeholder="src/main.py" class="flex-1 bg-slate-900 border border-slate-600 rounded px-3 py-2.5 focus:outline-none focus:border-blue-500 text-base md:text-sm">
+                                <button id="btn-view-file" class="bg-green-600 hover:bg-green-500 px-6 py-2.5 rounded text-sm font-semibold active:scale-95 shadow-lg shadow-green-900/20">View</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 bg-slate-900 border border-slate-700 rounded-lg relative overflow-hidden flex flex-col shadow-inner">
+                    <div class="bg-slate-800 px-4 py-2 border-b border-slate-700 text-xs text-slate-400 flex justify-between items-center shrink-0">
+                        <span class="font-semibold text-slate-300">Code</span>
+                        <span id="file-status" class="truncate ml-4 max-w-[150px] md:max-w-none">Ready</span>
+                    </div>
+                    <!-- Code Container with Horizontal Scrolling -->
+                    <div class="flex-1 overflow-auto bg-[#1f2937]">
+                        <div id="code-container" class="font-mono text-xs md:text-sm min-w-full pb-4">
+                            <div class="text-slate-500 text-center mt-10 p-4">Select a repository and file to view content...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: Search -->
+            <section id="tab-search" class="tab-content hidden-tab space-y-4">
+                <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4 items-end">
+                        <div class="md:col-span-4">
+                            <label class="block text-xs text-slate-400 mb-1">Repository</label>
+                            <div class="relative">
+                                <select id="search-repo-select" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-base md:text-sm appearance-none">
+                                    <option value="">-- Select --</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400"><i class="fas fa-chevron-down text-xs"></i></div>
+                            </div>
+                        </div>
+                        <div class="md:col-span-4">
+                            <label class="block text-xs text-slate-400 mb-1">Word / Regex</label>
+                            <input type="text" id="search-word" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-base md:text-sm" placeholder="Search term...">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs text-slate-400 mb-1">Ext (py, js)</label>
+                            <input type="text" id="search-ext" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-base md:text-sm" placeholder="Optional">
+                        </div>
+                        <div class="md:col-span-2 flex flex-row md:flex-col gap-4 md:gap-2 justify-center py-2 md:py-0">
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="search-case" class="sr-only peer">
+                                <div class="w-8 h-4 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600 relative"></div>
+                                <span class="ml-2 text-xs text-slate-300">Case</span>
+                            </label>
+                            <label class="inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="search-reg" class="sr-only peer">
+                                <div class="w-8 h-4 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600 relative"></div>
+                                <span class="ml-2 text-xs text-slate-300">Regex</span>
+                            </label>
+                        </div>
+                        <div class="md:col-span-12 mt-2">
+                            <button id="btn-search" class="w-full bg-purple-600 hover:bg-purple-500 px-4 py-3 md:py-2 rounded text-sm font-semibold shadow-lg shadow-purple-900/20 active:scale-95 transition">Search Code</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="search-results" class="space-y-3 pb-10">
+                    <div class="text-center text-slate-500 mt-10">Results will appear here</div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto bg-slate-800 border-l-4 border-green-500 text-white px-4 py-4 rounded shadow-2xl transform translate-y-32 transition-transform duration-300 z-[60] flex items-start gap-3">
+        <div id="toast-icon" class="mt-1"></div>
+        <p id="toast-msg" class="font-medium text-sm break-words"></p>
+    </div>
+
+    <!-- MODULE SCRIPT -->
+    <script type="module">
+        const API_BASE = 'http://localhost:8000/api/github';
+        
+        // --- STATE ---
+        let state = {
+            repos: [],
+            apiKey: localStorage.getItem('github_api_key') || ''
+        };
+
+        // --- DOM REFS ---
+        const els = {
+            sidebar: document.getElementById('sidebar'),
+            overlay: document.getElementById('mobile-overlay'),
+            apiKeyInput: document.getElementById('api-key-input'),
+            tabManage: document.getElementById('tab-manage'),
+            tabViewer: document.getElementById('tab-viewer'),
+            tabSearch: document.getElementById('tab-search'),
+            pageTitle: document.getElementById('page-title'),
+            repoListBody: document.getElementById('repo-list-body'),
+            viewerRepoSelect: document.getElementById('viewer-repo-select'),
+            searchRepoSelect: document.getElementById('search-repo-select'),
+            fileContentDisplay: document.getElementById('code-container'),
+            searchResults: document.getElementById('search-results'),
+            toast: document.getElementById('toast'),
+            toastMsg: document.getElementById('toast-msg'),
+            indicator: document.getElementById('status-indicator')
+        };
+
+        // --- INIT ---
+        document.addEventListener('DOMContentLoaded', () => {
+            els.apiKeyInput.value = state.apiKey;
+            fetchRepos();
+            attachEventListeners();
+        });
+
+        function attachEventListeners() {
+            // Mobile Menu Logic
+            document.getElementById('btn-mobile-menu').onclick = openSidebar;
+            document.getElementById('btn-close-sidebar').onclick = closeSidebar;
+            els.overlay.onclick = closeSidebar;
+
+            // Nav Tabs
+            const setupTab = (btnId, tabId) => {
+                document.getElementById(btnId).onclick = () => {
+                    switchTab(tabId);
+                    if (window.innerWidth < 768) closeSidebar();
+                };
+            };
+            setupTab('btn-tab-manage', 'tab-manage');
+            setupTab('btn-tab-viewer', 'tab-viewer');
+            setupTab('btn-tab-search', 'tab-search');
+
+            // API Key
+            document.getElementById('btn-save-key').onclick = saveApiKey;
+
+            // Actions
+            document.getElementById('btn-clone').onclick = cloneRepo;
+            document.getElementById('btn-clean').onclick = cleanRepos;
+            document.getElementById('btn-refresh').onclick = fetchRepos;
+            document.getElementById('btn-view-file').onclick = () => getFileContent();
+            document.getElementById('btn-search').onclick = searchRepo;
+        }
+
+        // --- MOBILE UI LOGIC ---
+        function openSidebar() {
+            els.sidebar.classList.remove('-translate-x-full');
+            els.overlay.classList.remove('hidden');
+        }
+
+        function closeSidebar() {
+            els.sidebar.classList.add('-translate-x-full');
+            els.overlay.classList.add('hidden');
+        }
+
+        // --- API & CORE LOGIC ---
+        function saveApiKey() {
+            const key = els.apiKeyInput.value.trim();
+            localStorage.setItem('github_api_key', key);
+            state.apiKey = key;
+            showToast('API Key saved', 'success');
+        }
+
+        async function apiCall(endpoint, method = 'POST', body = null) {
+            els.indicator.classList.remove('hidden');
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (state.apiKey) headers['X-API-Key'] = state.apiKey;
+
+                const options = { method, headers };
+                if (body) options.body = JSON.stringify(body);
+
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const text = await response.text();
+                
+                let data;
+                try { data = JSON.parse(text); } catch { data = { message: text }; }
+
+                if (!response.ok) throw new Error(data.message || data.detail || 'API Error');
+                return data;
+            } catch (error) {
+                showToast(error.message, 'error');
+                return null;
+            } finally {
+                els.indicator.classList.add('hidden');
+            }
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden-tab'));
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                el.classList.remove('bg-slate-700', 'text-blue-300');
+                el.classList.add('text-slate-400');
+            });
+
+            document.getElementById(tabId).classList.remove('hidden-tab');
+            const btn = document.getElementById('btn-' + tabId);
+            btn.classList.add('bg-slate-700', 'text-blue-300');
+            btn.classList.remove('text-slate-400');
+
+            const titles = {
+                'tab-manage': 'Repository Management',
+                'tab-viewer': 'File Viewer',
+                'tab-search': 'Code Search'
+            };
+            els.pageTitle.innerText = titles[tabId];
+        }
+
+        // --- REPOS ---
+        async function fetchRepos() {
+            const data = await apiCall('/list_repos');
+            els.repoListBody.innerHTML = '';
+
+            if (data) {
+                state.repos = data;
+                updateDropdowns();
+
+                if (state.repos.length === 0) {
+                    els.repoListBody.innerHTML = `<tr><td colspan="3" class="px-4 py-4 text-center text-slate-500">No repositories.</td></tr>`;
+                    return;
+                }
+
+                state.repos.forEach(repo => {
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-700/50 transition border-b border-slate-700/50 last:border-0";
+                    tr.innerHTML = `
+                        <td class="px-4 py-3 font-mono text-blue-300 truncate max-w-[100px] sm:max-w-xs" title="${repo.repo_url}">
+                            ${repo.repo_url.split('/').slice(-2).join('/')}
+                        </td>
+                        <td class="px-4 py-3 font-mono text-slate-400 truncate max-w-xs hidden sm:table-cell">${repo.local_path}</td>
+                        <td class="px-4 py-3 text-right"></td>
+                    `;
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "text-green-400 hover:text-green-300 border border-green-800 hover:bg-green-900/50 px-2 py-1 rounded text-xs";
+                    btn.innerHTML = '<i class="fas fa-download sm:mr-1"></i><span class="hidden sm:inline">Pull</span>';
+                    btn.onclick = () => pullRepo(repo.repo_url);
+                    
+                    tr.lastElementChild.appendChild(btn);
+                    els.repoListBody.appendChild(tr);
+                });
+            }
+        }
+
+        async function cloneRepo() {
+            const urlInput = document.getElementById('clone-url');
+            const url = urlInput.value.trim();
+            if (!url) return showToast('Enter URL', 'error');
+
+            const res = await apiCall('/clone', 'POST', { repo: url });
+            if (res) {
+                showToast('Cloned successfully');
+                urlInput.value = '';
+                fetchRepos();
+            }
+        }
+
+        async function pullRepo(repoIdentifier) {
+            const res = await apiCall('/pull', 'POST', { repo: repoIdentifier });
+            if (res) showToast('Pulled successfully');
+        }
+
+        async function cleanRepos() {
+            if(!confirm("Delete ALL repositories locally?")) return;
+            const res = await apiCall('/clean', 'POST');
+            if (res) {
+                showToast('All cleaned');
+                fetchRepos();
+            }
+        }
+
+        function updateDropdowns() {
+            const createOpts = () => {
+                let html = '<option value="">-- Select --</option>';
+                state.repos.forEach(r => {
+                    html += `<option value="${r.repo_url}">${r.repo_url}</option>`;
+                });
+                return html;
+            };
+            const html = createOpts();
+            els.viewerRepoSelect.innerHTML = html;
+            els.searchRepoSelect.innerHTML = html;
+        }
+
+        // --- VIEWER ---
+        async function getFileContent(manualRepo = null, manualPath = null, highlightLine = null) {
+            const repo = manualRepo || els.viewerRepoSelect.value;
+            const file = manualPath || document.getElementById('viewer-file-path').value.trim();
+            
+            if (!repo || !file) return showToast('Missing repo or path', 'error');
+
+            els.viewerRepoSelect.value = repo;
+            document.getElementById('viewer-file-path').value = file;
+
+            els.fileContentDisplay.innerHTML = '<div class="text-center text-slate-500 mt-10"><i class="fas fa-circle-notch fa-spin text-2xl mb-2"></i><br>Loading content...</div>';
+            document.getElementById('file-status').innerText = "Loading...";
+
+            const data = await apiCall('/get_file_content', 'POST', { repo, file });
+            
+            if (data) {
+                const content = (typeof data === 'string') ? data : (data.content || JSON.stringify(data, null, 2));
+                renderCode(content, highlightLine);
+                document.getElementById('file-status').innerText = `${file.split('/').pop()} (${content.split('\n').length} L)`;
+            } else {
+                els.fileContentDisplay.innerHTML = '<div class="text-center text-red-400 mt-10">Error loading file.</div>';
+                document.getElementById('file-status').innerText = "Error";
+            }
+        }
+
+        function renderCode(text, highlightLineNum) {
+            els.fileContentDisplay.innerHTML = '';
+            const lines = text.split('\n');
+            
+            lines.forEach((line, index) => {
+                const lineNum = index + 1;
+                const row = document.createElement('div');
+                row.className = `line-row ${lineNum == highlightLineNum ? 'highlight-line' : ''}`;
+                row.id = `line-${lineNum}`;
+                
+                const numSpan = document.createElement('div');
+                numSpan.className = 'line-num';
+                numSpan.innerText = lineNum;
+
+                const contentSpan = document.createElement('div');
+                contentSpan.className = 'line-content';
+                contentSpan.innerText = line; 
+
+                row.appendChild(numSpan);
+                row.appendChild(contentSpan);
+                els.fileContentDisplay.appendChild(row);
+            });
+
+            if (highlightLineNum) {
+                setTimeout(() => {
+                    const el = document.getElementById(`line-${highlightLineNum}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+            }
+        }
+
+        // --- SEARCH ---
+        async function searchRepo() {
+            const repo = els.searchRepoSelect.value;
+            const word = document.getElementById('search-word').value.trim();
+            const extInput = document.getElementById('search-ext').value.trim();
+            const caseSensitive = document.getElementById('search-case').checked;
+            const isRegex = document.getElementById('search-reg').checked;
+
+            if (!repo) return showToast('Select a repository', 'error');
+            
+            let extensions = extInput ? extInput.split(',').map(s => s.trim()).filter(s => s.length > 0) : undefined;
+
+            els.searchResults.innerHTML = '<div class="text-center text-slate-500 mt-4"><i class="fas fa-search fa-spin text-xl"></i><br>Searching...</div>';
+
+            const payload = {
+                repo: repo,
+                word: word || undefined,
+                extensions,
+                case: caseSensitive,
+                reg: isRegex
+            };
+            console.log("payload", payload);
+            const data = await apiCall('/search', 'POST', payload);
+            console.log("data", data);
+            els.searchResults.innerHTML = '';
+            
+            if (Array.isArray(data)) {
+                if(data.length === 0) {
+                    els.searchResults.innerHTML = '<div class="text-center text-slate-500 mt-4">No matches found.</div>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-800 border border-slate-700 p-3 rounded active:bg-slate-700 cursor-pointer group shadow-sm";
+                    
+                    // Sanitize logic for display
+                    const safeName = item.name || 'Unknown File';
+                    const safeLine = item.line || 'N/A';
+                    
+                    card.innerHTML = `
+                        <div class="flex flex-col gap-1">
+                            <div class="flex justify-between items-start">
+                                <span class="text-blue-400 font-mono text-sm break-all font-semibold">
+                                    <i class="far fa-file mr-1"></i>${safeName}
+                                </span>
+                                <span class="text-slate-500 text-xs bg-slate-900 px-2 py-1 rounded shrink-0">L ${safeLine}</span>
+                            </div>
+                            <div class="text-xs text-slate-400 mt-1 flex items-center">
+                                <i class="fas fa-external-link-alt mr-1 text-[10px]"></i> Tap to view
+                            </div>
+                        </div>
+                    `;
+                    
+                    card.onclick = () => {
+                        switchTab('tab-viewer');
+                        getFileContent(repo, item.name, item.line);
+                    };
+
+                    els.searchResults.appendChild(card);
+                });
+            } else {
+                els.searchResults.innerHTML = `<div class="bg-slate-800 p-4 rounded text-sm text-red-300">Invalid response format</div>`;
+            }
+        }
+
+        // --- TOAST ---
+        function showToast(msg, type = 'success') {
+            els.toastMsg.innerText = msg;
+            const icon = document.getElementById('toast-icon');
+            
+            if(type === 'error') {
+                els.toast.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto bg-slate-800 border-l-4 border-red-500 text-white px-4 py-3 rounded shadow-2xl transform transition-transform duration-300 z-[60] flex items-start gap-3';
+                icon.innerHTML = '<i class="fas fa-exclamation-circle text-red-500 text-lg"></i>';
+            } else {
+                els.toast.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto bg-slate-800 border-l-4 border-green-500 text-white px-4 py-3 rounded shadow-2xl transform transition-transform duration-300 z-[60] flex items-start gap-3';
+                icon.innerHTML = '<i class="fas fa-check-circle text-green-500 text-lg"></i>';
+            }
+            
+            els.toast.classList.remove('translate-y-32');
+            setTimeout(() => els.toast.classList.add('translate-y-32'), 3000);
+        }
+    </script>
+</body>
+</html>
