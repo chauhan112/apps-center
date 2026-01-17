@@ -1,13 +1,12 @@
 {
-  "name": "domopsfrontend",
+  "name": "deployment-center",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
-    "deploy": "gh-pages -b gh-pages -d dist"
+    "preview": "vite preview"
   },
   "devDependencies": {
     "dependency-cruiser": "^17.0.0",
@@ -18,7 +17,6 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.0.16",
     "axios": "^1.11.0",
-    "gh-pages": "^6.3.0",
     "lucide": "^0.486.0",
     "sift": "^17.1.3",
     "tailwindcss": "^4.0.16",
