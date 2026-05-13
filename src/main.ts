@@ -1,7 +1,6 @@
 import "./style.css";
-import { DeploymentCenter } from "./rlib/timeline/t2026/DeploymentCenter";
+import { MainTestComp } from "./rlib/timeline/testComp";
 
-const page = DeploymentCenter();
 document
     .querySelector<HTMLDivElement>("#app")!
-    .appendChild(page.comp.getElement());
+    .appendChild(MainTestComp.get_comp().getElement());
